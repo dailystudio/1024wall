@@ -1,18 +1,20 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:flutter_stetho/flutter_stetho.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:path/path.dart' as path;
 import 'package:photo_wall_1024/database/database.dart';
 import 'package:photo_wall_1024/events/events.dart';
 import 'package:photo_wall_1024/page/takepicturepage.dart';
 import 'package:photo_wall_1024/ui/photogridview.dart';
 import 'package:photo_wall_1024/utils/camera.dart';
-
 import 'development/logger.dart';
 
 Color primaryColor = Colors.deepOrange;
@@ -78,7 +80,6 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage>
     with WidgetsBindingObserver, RouteAware {
-
   ScrollController _faceScrollController = ScrollController();
   bool _hasNewFaces = false;
 
@@ -209,20 +210,52 @@ class _MyHomePageState extends State<MyHomePage>
     _occupied.add(Point(22, 5));
     _occupied.add(Point(22, 7));
     _occupied.add(Point(22, 9));
+  }
 
+  Future<ui.Image> _loadPhotoFrame(String frameFile) async {
+    Logger.debug("loading frame ... [$frameFile]");
+
+    Completer c = new Completer<ui.Image>();
+    ByteData data = await rootBundle.load(frameFile);
+
+    Uint8List bytes =
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    ui.decodeImageFromList(bytes, (ui.Image img) {
+      Logger.debug("frame loaded... [$img]");
+
+      c.complete(img);
+    });
+
+    return c.future;
+  }
+
+  Future<ui.Image> _loadImage(File photoFile) async {
+    Logger.debug("loading image ... [$photoFile]");
+
+    Completer c = new Completer<ui.Image>();
+    Uint8List data = photoFile.readAsBytesSync();
+    ui.decodeImageFromList(data, (ui.Image img) {
+      Logger.debug("image loaded... [$img]");
+
+      c.complete(img);
+    });
+
+    return c.future;
   }
 
   void _generate() async {
+    ui.Image frame = await _loadPhotoFrame('assets/images/photo_frame_red.png');
     _initCells();
 
     List<Photo> photos = await _fetchPhotos();
     Logger.debug('photoes to use: $photos');
+    var maxSize = photos.length;
 
     var col = 24;
     var row = 11;
 
-    var cellWidth = 200.0;
-    var cellHeight = 200.0;
+    var cellWidth = 300.0;
+    var cellHeight = 300.0;
 
     var width = col * cellWidth;
     var height = row * cellHeight;
@@ -233,6 +266,10 @@ class _MyHomePageState extends State<MyHomePage>
     Logger.debug('generating the photo wall ...');
     var pictureRecorder = ui.PictureRecorder();
     var canvas = Canvas(pictureRecorder);
+
+    Paint bgPaint = Paint();
+    bgPaint..color = Colors.white;
+    canvas.drawRect(Rect.fromLTWH(0, 0, width, height), bgPaint);
 
     Paint linePaint = Paint();
     linePaint..color = Colors.deepOrange;
@@ -253,14 +290,54 @@ class _MyHomePageState extends State<MyHomePage>
     fillPaint..style = PaintingStyle.fill;
 
     Rect r;
+    Rect srcRect;
+    Rect dstRect;
+    var photo;
+    var index;
+    var key;
+    ui.Image image;
+    var cache = Map<String, ui.Image>();
+    double scale;
     for (Point p in _occupied) {
       if (p.x < 0 || p.x >= col || p.y < 0 || p.y >= row) {
         continue;
       }
 
-      r = Rect.fromLTWH(offsetX + p.x * cellWidth, offsetY + p.y * cellHeight,
-          cellWidth, cellHeight);
-      canvas.drawRect(r, fillPaint);
+      int min = 0, max = maxSize - 1;
+      index = min + Random().nextInt(max - min);
+      photo = photos[index];
+      key = path.basename(photo.file);
+      Logger.debug("pick $index: $photo to fill, key = $key");
+
+      if (cache.containsKey(key)) {
+        image = cache[key];
+      } else {
+        image = await _loadImage(File(photo.file));
+        image = await decorateImage(image, frame, -10 / 180 * 3.14, 50, 100);
+        cache[key] = image;
+      }
+
+//      r = Rect.fromLTWH(offsetX + p.x * cellWidth, offsetY + p.y * cellHeight,
+//          cellWidth, cellHeight);
+//      canvas.drawRect(r, fillPaint);
+
+      scale = _calculateScale(
+          Size(image.width.toDouble(), image.height.toDouble()),
+          Size(cellWidth, cellHeight));
+
+      dstRect = Rect.fromLTWH(offsetX + p.x * cellWidth,
+          offsetY + p.y * cellHeight, cellWidth, cellHeight);
+
+      double srcWidth = dstRect.width / scale;
+      double srcHeight = dstRect.height / scale;
+      double srcX = (image.width - srcWidth) / 2.0;
+      double srcY = (image.height - srcHeight) / 2.0;
+
+      srcRect =
+          Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+      dstRect = Rect.fromLTWH(offsetX + p.x * cellWidth,
+          offsetY + p.y * cellHeight, image.width * scale, image.height * scale);
+      canvas.drawImageRect(image, srcRect, dstRect, fillPaint);
     }
 
     var pic = pictureRecorder.endRecording();
@@ -271,6 +348,138 @@ class _MyHomePageState extends State<MyHomePage>
     String outputFile = '/sdcard/1.png';
     new File(outputFile).writeAsBytes(buffer);
     Logger.debug('generated photo wall is saved in [$outputFile]');
+  }
+
+  Future<ui.Image> decorateImage(
+      ui.Image image, ui.Image frame, double angle, double x, double y) async {
+    var pictureRecorder = ui.PictureRecorder();
+    Canvas canvas = Canvas(pictureRecorder);
+
+    Paint fillPaint = Paint();
+
+    ui.Image scaled = await scaleImage(image, .415);
+    ui.Image cropped = await cropImage(scaled, scaled.width, scaled.width);
+    ui.Image rotated = await rotatedImage(cropped, angle);
+    canvas.drawImage(frame, Offset(0, 0), fillPaint);
+//    canvas.drawRect(
+//        Rect.fromLTWH(0, 0, frame.width.toDouble(), frame.height.toDouble()),
+//        Paint()..color = Colors.black);
+    canvas.drawImage(rotated, Offset(19, 52), fillPaint);
+
+    return pictureRecorder.endRecording().toImage(frame.width, frame.height);
+  }
+
+  Future<ui.Image> cropImage(ui.Image image, int width, int height) {
+    var pictureRecorder = ui.PictureRecorder();
+    Canvas canvas = Canvas(pictureRecorder);
+
+    Paint fillPaint = Paint();
+
+    double offsetX = (image.width - width) / 2.0;
+    double offsetY = (image.height - height) / 2.0;
+
+    Rect srcRect =
+        Rect.fromLTWH(offsetX, offsetY, width.toDouble(), height.toDouble());
+    Rect dstRect = Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble());
+    canvas.drawImageRect(image, srcRect, dstRect, fillPaint);
+
+    return pictureRecorder.endRecording().toImage(width, height);
+  }
+
+  Future<ui.Image> scaleImage(ui.Image image, double scale) {
+    var pictureRecorder = ui.PictureRecorder();
+    Canvas canvas = Canvas(pictureRecorder);
+
+    Paint fillPaint = Paint();
+
+    Rect srcRect =
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+    Rect dstRect =
+        Rect.fromLTWH(0, 0, image.width * scale, image.height * scale);
+    canvas.drawImageRect(image, srcRect, dstRect, fillPaint);
+
+    return pictureRecorder
+        .endRecording()
+        .toImage((image.width * scale).round(), (image.height * scale).round());
+  }
+
+  Size rotatedSize(int rw, int rh, double radians) {
+    var x1 = -rw / 2,
+        x2 = rw / 2,
+        x3 = rw / 2,
+        x4 = -rw / 2,
+        y1 = rh / 2,
+        y2 = rh / 2,
+        y3 = -rh / 2,
+        y4 = -rh / 2;
+
+    var x11 = x1 * cos(radians) + y1 * sin(radians),
+        y11 = -x1 * sin(radians) + y1 * cos(radians),
+        x21 = x2 * cos(radians) + y2 * sin(radians),
+        y21 = -x2 * sin(radians) + y2 * cos(radians),
+        x31 = x3 * cos(radians) + y3 * sin(radians),
+        y31 = -x3 * sin(radians) + y3 * cos(radians),
+        x41 = x4 * cos(radians) + y4 * sin(radians),
+        y41 = -x4 * sin(radians) + y4 * cos(radians);
+
+    var xMin = [x11, x21, x31, x41].reduce(min);
+    var xMax = [x11, x21, x31, x41].reduce(max);
+
+    var yMin = [y11, y21, y31, y41].reduce(min);
+    var yMax = [y11, y21, y31, y41].reduce(max);
+
+    return Size(xMax - xMin, yMax - yMin);
+  }
+
+  Future<ui.Image> rotatedImage(ui.Image image, double angle) {
+    var pictureRecorder = ui.PictureRecorder();
+    Canvas canvas = Canvas(pictureRecorder);
+
+    Size size = rotatedSize(image.width, image.height, angle);
+//    canvas.drawRect(
+//        Rect.fromLTWH(0, 0, size.width.toDouble(), size.height.toDouble()),
+//        Paint()..color = Colors.blue);
+
+    double r = sqrt(pow(size.width, 2) + pow(size.height, 2));
+    double startAngle = atan(size.height / size.width);
+    Point p0 = Point(r * cos(startAngle), r * sin(startAngle));
+    double xAngle = angle;
+    Point px =
+        Point(r * cos(xAngle + startAngle), r * sin(xAngle + startAngle));
+    canvas.translate((p0.x - px.x) / 2, (p0.y - px.y) / 2);
+    canvas.rotate(xAngle);
+
+//    Rect src = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+//    Rect dst = Rect.fromCircle(
+//        center: Offset(size.width / 2, size.height / 2), radius: max / 2);
+//    canvas.drawImageRect(image, src, dst, Paint());
+    canvas.drawImage(
+        image,
+        Offset(
+            (size.width - image.width) / 2, (size.height - image.height) / 2),
+        Paint());
+
+    return pictureRecorder
+        .endRecording()
+        .toImage((size.width).round(), (size.height).round());
+  }
+
+  double _calculateScale(Size srcSize, Size destSize) {
+    if (srcSize == null || destSize == null) {
+      return 1.0;
+    }
+
+    double iRatio = srcSize.width / srcSize.height;
+    double cRatio = destSize.width / destSize.height;
+
+    double ratio = 1.0;
+    if (iRatio > cRatio) {
+      ratio = destSize.height / srcSize.height;
+    } else {
+      ratio = destSize.width / srcSize.width;
+    }
+
+    return ratio;
   }
 
   @override
@@ -294,12 +503,12 @@ class _MyHomePageState extends State<MyHomePage>
 
           return snapshot.hasData
               ? new PhotosGridView(
-              photos: snapshot.data, controller: _faceScrollController)
+                  photos: snapshot.data, controller: _faceScrollController)
               : new Center(child: new CircularProgressIndicator());
         },
       ),
       floatingActionButton: SpeedDial(
-        // both default to 16
+          // both default to 16
           marginRight: 24,
           marginBottom: 24,
           animatedIcon: AnimatedIcons.menu_close,
@@ -316,17 +525,14 @@ class _MyHomePageState extends State<MyHomePage>
                 backgroundColor: primaryColor,
                 label: 'Add Photo',
                 labelStyle: TextStyle(fontSize: 16.0),
-                onTap: _takePicture
-            ),
+                onTap: _takePicture),
             SpeedDialChild(
                 child: Icon(Icons.image),
                 backgroundColor: primaryColor,
                 label: 'Generate',
                 labelStyle: TextStyle(fontSize: 16.0),
-                onTap: _generate
-            ),
+                onTap: _generate),
           ]), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
-
 }
