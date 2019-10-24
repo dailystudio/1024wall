@@ -9,7 +9,6 @@ import 'package:fluttie/fluttie.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:photo_wall_1024/development/logger.dart';
 
-
 class ViewPicturePage extends StatefulWidget {
   final String filePath;
   final CameraLensDirection direction;
@@ -302,6 +301,7 @@ class _ViewPicturePageState extends State<ViewPicturePage> {
 
     var start, end;
     bool useFastAlgorithm = true;
+    Logger.debug('process image: useFastAlgorithm = $useFastAlgorithm');
 
     if (useFastAlgorithm) {
       start = new DateTime.now().millisecondsSinceEpoch;
@@ -315,6 +315,15 @@ class _ViewPicturePageState extends State<ViewPicturePage> {
       end = new DateTime.now().millisecondsSinceEpoch;
       Logger.debug('pre-process image is accomplished in ${end - start} milliseconds.');
     }
+
+    _autoClose();
+  }
+
+  void _autoClose() {
+    _autoCloseTimer = new Timer(Duration(seconds: 5), () {
+      Navigator.pop(context);
+      Navigator.pop(context);
+    });
   }
 
   void prepareAnimation() async {

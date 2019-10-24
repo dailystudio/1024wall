@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' show join;
 import 'package:path_provider/path_provider.dart';
+import 'package:photo_wall_1024/database/database.dart';
 import 'package:photo_wall_1024/development/logger.dart';
+import 'package:photo_wall_1024/events/events.dart';
 import 'package:photo_wall_1024/page/viewpicturepage.dart';
 import 'package:photo_wall_1024/utils/camera.dart';
 
@@ -40,6 +41,23 @@ class TakePicturePageState extends State<TakePicturePage> {
     // Dispose of the controller when the widget is disposed.
     _cameraCore.closeCamera();
     super.dispose();
+  }
+
+  Future<int> _addPhoto(String filePath) async {
+    PhotoDatabase db = PhotoDatabase();
+    await db.open();
+
+    Photo photo = new Photo();
+    photo.file = filePath;
+    photo.timestamp = new DateTime.now().millisecondsSinceEpoch;
+
+    int photoId = await db.addPhoto(photo);
+    await db.close();
+    if (photoId > 0) {
+      eventBus.fire(new NewPhotoEvent());
+    }
+
+    return photoId;
   }
 
   @override
@@ -120,6 +138,8 @@ class TakePicturePageState extends State<TakePicturePage> {
             // Attempt to take a picture and log where it's been saved.
             await _cameraCore.getCamera().takePicture(path);
             Logger.debug("file is saved in [$path]");
+//            int id = await _addPhoto(path);
+//            Logger.debug("new photo is added in database. id = $id");
 
             Navigator.push(
               context,
@@ -132,6 +152,7 @@ class TakePicturePageState extends State<TakePicturePage> {
                     ViewPicturePage(
                       filePath: path,
                       direction: _cameraCore.getCameraDirection(),
+//                      newPhoto: true
                     ),
               ),
             );

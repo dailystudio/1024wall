@@ -1,14 +1,23 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:flutter_stetho/flutter_stetho.dart';
+import 'package:photo_wall_1024/database/database.dart';
+import 'package:photo_wall_1024/events/events.dart';
 import 'package:photo_wall_1024/page/takepicturepage.dart';
+import 'package:photo_wall_1024/ui/photogridview.dart';
 import 'package:photo_wall_1024/utils/camera.dart';
 
 import 'development/logger.dart';
 
 Color primaryColor = Colors.deepOrange;
+final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
+Set<Point<int>> _occupied = Set();
 
 void main() {
   Logger.setDebugEnabled(!kReleaseMode);
@@ -67,8 +76,82 @@ class MyHomePage extends StatefulWidget {
   _MyHomePageState createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage>
+    with WidgetsBindingObserver, RouteAware {
 
+  ScrollController _faceScrollController = ScrollController();
+  bool _hasNewFaces = false;
+
+  Future<List<Photo>> _fetchPhotos() async {
+    PhotoDatabase db = new PhotoDatabase();
+
+    await db.open();
+    final List<Photo> faces = await db.listPhotos();
+    db.close();
+
+    if (faces.length % 2 == 0) {
+      faces.add(PhotoPlaceHolder());
+    }
+
+    return faces;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
+
+    eventBus.on<NewPhotoEvent>().listen((event) {
+      print('new event: $event');
+
+      _hasNewFaces = true;
+    });
+
+    eventBus.on<UpdatePhotoEvent>().listen((event) {
+      print('new event: $event');
+
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _routeObserver.unsubscribe(this);
+
+    WidgetsBinding.instance.removeObserver(this);
+
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    print('life cycle state: $state');
+    setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    _routeObserver.subscribe(this, ModalRoute.of(context));
+  }
+
+  @override
+  void didPush() {}
+
+  @override
+  void didPopNext() {
+    if (_hasNewFaces) {
+      setState(() {
+        new Timer(Duration(seconds: 1), () {
+          _faceScrollController.animateTo(0,
+              duration: Duration(milliseconds: 1000), curve: Curves.ease);
+          _hasNewFaces = false;
+        });
+      });
+    }
+  }
 
   void _takePicture() {
     Navigator.push(
@@ -77,6 +160,117 @@ class _MyHomePageState extends State<MyHomePage> {
         builder: (context) => TakePicturePage(),
       ),
     );
+  }
+
+  void _initCells() {
+    _occupied.clear();
+
+    /* 1 */
+    _occupied.add(Point(1, 1));
+    _occupied.add(Point(1, 3));
+    _occupied.add(Point(1, 5));
+    _occupied.add(Point(1, 7));
+    _occupied.add(Point(1, 9));
+
+    /* 0 */
+    _occupied.add(Point(4, 1));
+    _occupied.add(Point(4, 3));
+    _occupied.add(Point(4, 5));
+    _occupied.add(Point(4, 7));
+    _occupied.add(Point(4, 9));
+    _occupied.add(Point(6, 1));
+    _occupied.add(Point(8, 1));
+    _occupied.add(Point(8, 3));
+    _occupied.add(Point(8, 5));
+    _occupied.add(Point(8, 7));
+    _occupied.add(Point(8, 9));
+    _occupied.add(Point(6, 9));
+
+    /* 2 */
+    _occupied.add(Point(11, 1));
+    _occupied.add(Point(13, 1));
+    _occupied.add(Point(15, 1));
+    _occupied.add(Point(15, 3));
+    _occupied.add(Point(15, 5));
+    _occupied.add(Point(13, 5));
+    _occupied.add(Point(11, 5));
+    _occupied.add(Point(11, 7));
+    _occupied.add(Point(11, 9));
+    _occupied.add(Point(13, 9));
+    _occupied.add(Point(15, 9));
+
+    /* 4 */
+    _occupied.add(Point(18, 1));
+    _occupied.add(Point(22, 1));
+    _occupied.add(Point(18, 3));
+    _occupied.add(Point(22, 3));
+    _occupied.add(Point(18, 5));
+    _occupied.add(Point(20, 5));
+    _occupied.add(Point(22, 5));
+    _occupied.add(Point(22, 7));
+    _occupied.add(Point(22, 9));
+
+  }
+
+  void _generate() async {
+    _initCells();
+
+    List<Photo> photos = await _fetchPhotos();
+    Logger.debug('photoes to use: $photos');
+
+    var col = 24;
+    var row = 11;
+
+    var cellWidth = 200.0;
+    var cellHeight = 200.0;
+
+    var width = col * cellWidth;
+    var height = row * cellHeight;
+
+    double offsetX = 0;
+    double offsetY = 0;
+
+    Logger.debug('generating the photo wall ...');
+    var pictureRecorder = ui.PictureRecorder();
+    var canvas = Canvas(pictureRecorder);
+
+    Paint linePaint = Paint();
+    linePaint..color = Colors.deepOrange;
+    linePaint..strokeWidth = 3;
+
+/*
+    for (double x = offsetX; x < offsetX + width + cellWidth; x += cellWidth) {
+      canvas.drawLine(Offset(x, offsetY), Offset(x, offsetY + height), linePaint);
+    }
+
+    for (double y = offsetY; y < offsetY + height + cellHeight; y += cellHeight) {
+      canvas.drawLine(Offset(offsetX, y), Offset(offsetX + width, y), linePaint);
+    }
+*/
+
+    Paint fillPaint = Paint();
+    fillPaint..color = Colors.deepOrange;
+    fillPaint..style = PaintingStyle.fill;
+
+    Rect r;
+    for (Point p in _occupied) {
+      if (p.x < 0 || p.x >= col || p.y < 0 || p.y >= row) {
+        continue;
+      }
+
+      r = Rect.fromLTWH(offsetX + p.x * cellWidth, offsetY + p.y * cellHeight,
+          cellWidth, cellHeight);
+      canvas.drawRect(r, fillPaint);
+    }
+
+    var pic = pictureRecorder.endRecording();
+    ui.Image img = await pic.toImage(width.round(), height.round());
+    var byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    var buffer = byteData.buffer.asUint8List();
+
+    String outputFile = '/sdcard/1.png';
+    new File(outputFile).writeAsBytes(buffer);
+    Logger.debug('generated photo wall is saved in [$outputFile]');
   }
 
   @override
@@ -93,12 +287,45 @@ class _MyHomePageState extends State<MyHomePage> {
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
-      body: Container(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _takePicture,
-        tooltip: 'Take a photo',
-        child: Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      body: new FutureBuilder<List<Photo>>(
+        future: _fetchPhotos(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) print(snapshot.error);
+
+          return snapshot.hasData
+              ? new PhotosGridView(
+              photos: snapshot.data, controller: _faceScrollController)
+              : new Center(child: new CircularProgressIndicator());
+        },
+      ),
+      floatingActionButton: SpeedDial(
+        // both default to 16
+          marginRight: 24,
+          marginBottom: 24,
+          animatedIcon: AnimatedIcons.menu_close,
+          animatedIconTheme: IconThemeData(size: 22.0),
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          shape: CircleBorder(),
+          curve: Curves.bounceIn,
+          overlayColor: Colors.black,
+          overlayOpacity: 0.5,
+          children: [
+            SpeedDialChild(
+                child: Icon(Icons.add_a_photo),
+                backgroundColor: primaryColor,
+                label: 'Add Photo',
+                labelStyle: TextStyle(fontSize: 16.0),
+                onTap: _takePicture
+            ),
+            SpeedDialChild(
+                child: Icon(Icons.image),
+                backgroundColor: primaryColor,
+                label: 'Generate',
+                labelStyle: TextStyle(fontSize: 16.0),
+                onTap: _generate
+            ),
+          ]), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 
