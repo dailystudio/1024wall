@@ -9,17 +9,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:flutter_stetho/flutter_stetho.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as path;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_wall_1024/database/database.dart';
 import 'package:photo_wall_1024/events/events.dart';
 import 'package:photo_wall_1024/page/takepicturepage.dart';
 import 'package:photo_wall_1024/ui/photogridview.dart';
+import 'package:photo_wall_1024/ui/photowallgenerator.dart';
 import 'package:photo_wall_1024/utils/camera.dart';
 import 'development/logger.dart';
 
 Color primaryColor = Colors.deepOrange;
 final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
 Set<Point<int>> _occupied = Set();
+
+Frame bgFrame = Frame('assets/images/developer_day_2019.png',
+    1.0, 0.0, Offset(928, 254));
+
+List<Frame> photoFrames = List();
 
 void main() {
   Logger.setDebugEnabled(!kReleaseMode);
@@ -163,6 +171,21 @@ class _MyHomePageState extends State<MyHomePage>
     );
   }
 
+  void _initPhotoFrames() {
+    photoFrames.clear();
+
+    photoFrames.add(Frame('assets/images/photo_frame_red.png',
+      0.415, -10 / 180 * 3.14, Offset(19, 52)));
+    photoFrames.add(Frame('assets/images/photo_frame_yellow.png',
+      0.415, 6.5 / 180 * 3.14, Offset(24, 67)));
+    photoFrames.add(Frame('assets/images/photo_frame_orange.png',
+      0.415, 1.6 / 180 * 3.14, Offset(16, 71)));
+    photoFrames.add(Frame('assets/images/photo_frame_blue.png',
+      0.415, -3 / 180 * 3.14, Offset(16, 69)));
+    photoFrames.add(Frame('assets/images/photo_frame_green.png',
+      0.415, 11.5 / 180 * 3.14, Offset(28, 46)));
+  }
+
   void _initCells() {
     _occupied.clear();
 
@@ -212,23 +235,6 @@ class _MyHomePageState extends State<MyHomePage>
     _occupied.add(Point(22, 9));
   }
 
-  Future<ui.Image> _loadPhotoFrame(String frameFile) async {
-    Logger.debug("loading frame ... [$frameFile]");
-
-    Completer c = new Completer<ui.Image>();
-    ByteData data = await rootBundle.load(frameFile);
-
-    Uint8List bytes =
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-    ui.decodeImageFromList(bytes, (ui.Image img) {
-      Logger.debug("frame loaded... [$img]");
-
-      c.complete(img);
-    });
-
-    return c.future;
-  }
-
   Future<ui.Image> _loadImage(File photoFile) async {
     Logger.debug("loading image ... [$photoFile]");
 
@@ -243,8 +249,54 @@ class _MyHomePageState extends State<MyHomePage>
     return c.future;
   }
 
-  void _generate() async {
-    ui.Image frame = await _loadPhotoFrame('assets/images/photo_frame_red.png');
+  void _exportPhotoWall() async {
+    PermissionStatus permission = await PermissionHandler()
+        .checkPermissionStatus(PermissionGroup.storage);
+    if (permission != PermissionStatus.granted) {
+      Logger.debug('permission[${PermissionGroup.storage}] is not granted. request it!');
+      Map<PermissionGroup, PermissionStatus> permissions = await PermissionHandler()
+          .requestPermissions([PermissionGroup.storage]);
+      if (permissions[PermissionGroup.storage] != PermissionStatus.granted) {
+        Logger.debug('permission[${PermissionGroup.storage}] is denied. skip export.');
+        return;
+      }
+    }
+
+    var pictureRecorder = ui.PictureRecorder();
+    var canvas = Canvas(pictureRecorder);
+
+    Paint drawPaint = Paint()..isAntiAlias = true;
+//    drawPaint..color = Colors.white;
+//    canvas.drawRect(Rect.fromLTWH(0, 0, width, height), drawPaint);
+//
+//    canvas.drawImage(bg, Offset((width - bg.width) / 2, (height - bg.height)/ 2), drawPaint);
+
+
+    ui.Image photoWallBackground = await bgFrame.getImage();
+    ui.Image photoWallContent = await _generate();
+
+    canvas.drawImage(photoWallBackground, Offset(0, 0), drawPaint);
+    canvas.drawImage(photoWallContent, bgFrame.offset, drawPaint);
+
+    var pic = pictureRecorder.endRecording();
+
+    ui.Image finalImage = await pic.toImage(photoWallBackground.width.round(),
+        photoWallBackground.height.round());
+//    ui.Image finalImage = await pic.toImage(photoWallContent.width.round(),
+//        photoWallContent.height.round());
+
+    var byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
+    var buffer = byteData.buffer.asUint8List();
+
+    String outputFile = '/sdcard/1.png';
+    await new File(outputFile).writeAsBytes(buffer);
+    Logger.debug('generated photo wall is saved in [$outputFile]');
+
+    OpenFile.open(outputFile);
+  }
+
+  Future<ui.Image> _generate() async {
+    _initPhotoFrames();
     _initCells();
 
     List<Photo> photos = await _fetchPhotos();
@@ -266,10 +318,6 @@ class _MyHomePageState extends State<MyHomePage>
     Logger.debug('generating the photo wall ...');
     var pictureRecorder = ui.PictureRecorder();
     var canvas = Canvas(pictureRecorder);
-
-    Paint bgPaint = Paint();
-    bgPaint..color = Colors.white;
-    canvas.drawRect(Rect.fromLTWH(0, 0, width, height), bgPaint);
 
     Paint linePaint = Paint();
     linePaint..color = Colors.deepOrange;
@@ -293,29 +341,42 @@ class _MyHomePageState extends State<MyHomePage>
     Rect srcRect;
     Rect dstRect;
     var photo;
-    var index;
+    var photoIndex;
+    var frameIndex;
     var key;
     ui.Image image;
+    Frame frame;
     var cache = Map<String, ui.Image>();
     double scale;
+    int min, max;
     for (Point p in _occupied) {
       if (p.x < 0 || p.x >= col || p.y < 0 || p.y >= row) {
         continue;
       }
 
-      int min = 0, max = maxSize - 1;
-      index = min + Random().nextInt(max - min);
-      photo = photos[index];
+      min = 0;
+      max = photoFrames.length;
+      frameIndex = min + Random().nextInt(max - min);
+
+      frame = photoFrames[frameIndex];
+
+      min = 0;
+      max = photos.length;
+      photoIndex = min + Random().nextInt(max - min);
+      photo = photos[photoIndex];
       key = path.basename(photo.file);
-      Logger.debug("pick $index: $photo to fill, key = $key");
+      Logger.debug("pick $photoIndex: $photo to fill, key = $key");
 
       if (cache.containsKey(key)) {
         image = cache[key];
       } else {
         image = await _loadImage(File(photo.file));
-        image = await decorateImage(image, frame, -10 / 180 * 3.14, 50, 100);
         cache[key] = image;
       }
+
+      image = await decorateImage(image, await frame.getImage(),
+          frame.scale, frame.angle, frame.offset);
+
 
 //      r = Rect.fromLTWH(offsetX + p.x * cellWidth, offsetY + p.y * cellHeight,
 //          cellWidth, cellHeight);
@@ -328,11 +389,6 @@ class _MyHomePageState extends State<MyHomePage>
       dstRect = Rect.fromLTWH(offsetX + p.x * cellWidth,
           offsetY + p.y * cellHeight, cellWidth, cellHeight);
 
-      double srcWidth = dstRect.width / scale;
-      double srcHeight = dstRect.height / scale;
-      double srcX = (image.width - srcWidth) / 2.0;
-      double srcY = (image.height - srcHeight) / 2.0;
-
       srcRect =
           Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
       dstRect = Rect.fromLTWH(offsetX + p.x * cellWidth,
@@ -342,29 +398,28 @@ class _MyHomePageState extends State<MyHomePage>
 
     var pic = pictureRecorder.endRecording();
     ui.Image img = await pic.toImage(width.round(), height.round());
-    var byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    var buffer = byteData.buffer.asUint8List();
 
-    String outputFile = '/sdcard/1.png';
-    new File(outputFile).writeAsBytes(buffer);
-    Logger.debug('generated photo wall is saved in [$outputFile]');
+    return img;
   }
 
   Future<ui.Image> decorateImage(
-      ui.Image image, ui.Image frame, double angle, double x, double y) async {
+      ui.Image image, ui.Image frame,
+      double scale,
+      double angle,
+      Offset offset) async {
     var pictureRecorder = ui.PictureRecorder();
     Canvas canvas = Canvas(pictureRecorder);
 
-    Paint fillPaint = Paint();
+    Paint imagePaint = Paint()..isAntiAlias = true;
 
-    ui.Image scaled = await scaleImage(image, .415);
-    ui.Image cropped = await cropImage(scaled, scaled.width, scaled.width);
+    ui.Image scaled = await scaleImage(image, scale);
+    ui.Image cropped = await cropImage(scaled, scaled.width, (scaled.width * 1.1).round());
     ui.Image rotated = await rotatedImage(cropped, angle);
-    canvas.drawImage(frame, Offset(0, 0), fillPaint);
+    canvas.drawImage(frame, Offset(0, 0), imagePaint);
 //    canvas.drawRect(
 //        Rect.fromLTWH(0, 0, frame.width.toDouble(), frame.height.toDouble()),
 //        Paint()..color = Colors.black);
-    canvas.drawImage(rotated, Offset(19, 52), fillPaint);
+    canvas.drawImage(rotated, offset, imagePaint);
 
     return pictureRecorder.endRecording().toImage(frame.width, frame.height);
   }
@@ -373,7 +428,7 @@ class _MyHomePageState extends State<MyHomePage>
     var pictureRecorder = ui.PictureRecorder();
     Canvas canvas = Canvas(pictureRecorder);
 
-    Paint fillPaint = Paint();
+    Paint imagePaint = Paint()..isAntiAlias = true;
 
     double offsetX = (image.width - width) / 2.0;
     double offsetY = (image.height - height) / 2.0;
@@ -381,7 +436,7 @@ class _MyHomePageState extends State<MyHomePage>
     Rect srcRect =
         Rect.fromLTWH(offsetX, offsetY, width.toDouble(), height.toDouble());
     Rect dstRect = Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble());
-    canvas.drawImageRect(image, srcRect, dstRect, fillPaint);
+    canvas.drawImageRect(image, srcRect, dstRect, imagePaint);
 
     return pictureRecorder.endRecording().toImage(width, height);
   }
@@ -390,13 +445,13 @@ class _MyHomePageState extends State<MyHomePage>
     var pictureRecorder = ui.PictureRecorder();
     Canvas canvas = Canvas(pictureRecorder);
 
-    Paint fillPaint = Paint();
+    Paint imagePaint = Paint()..isAntiAlias = true;
 
     Rect srcRect =
         Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
     Rect dstRect =
         Rect.fromLTWH(0, 0, image.width * scale, image.height * scale);
-    canvas.drawImageRect(image, srcRect, dstRect, fillPaint);
+    canvas.drawImageRect(image, srcRect, dstRect, imagePaint);
 
     return pictureRecorder
         .endRecording()
@@ -435,6 +490,8 @@ class _MyHomePageState extends State<MyHomePage>
     var pictureRecorder = ui.PictureRecorder();
     Canvas canvas = Canvas(pictureRecorder);
 
+    Paint imagePaint = Paint()..isAntiAlias = true;
+
     Size size = rotatedSize(image.width, image.height, angle);
 //    canvas.drawRect(
 //        Rect.fromLTWH(0, 0, size.width.toDouble(), size.height.toDouble()),
@@ -457,7 +514,7 @@ class _MyHomePageState extends State<MyHomePage>
         image,
         Offset(
             (size.width - image.width) / 2, (size.height - image.height) / 2),
-        Paint());
+        imagePaint);
 
     return pictureRecorder
         .endRecording()
@@ -531,7 +588,7 @@ class _MyHomePageState extends State<MyHomePage>
                 backgroundColor: primaryColor,
                 label: 'Generate',
                 labelStyle: TextStyle(fontSize: 16.0),
-                onTap: _generate),
+                onTap: _exportPhotoWall),
           ]), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }

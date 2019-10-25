@@ -39,7 +39,10 @@ dependencies:
   event_bus:
   intl:
   fluttie: ^0.3.0
+  android_intent: ^0.3.4+3
   flutter_image_compress: ^0.6.3
+  open_file: ^2.0.3
+
 
 
 dev_dependencies:

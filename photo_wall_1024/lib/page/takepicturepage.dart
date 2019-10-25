@@ -138,21 +138,17 @@ class TakePicturePageState extends State<TakePicturePage> {
             // Attempt to take a picture and log where it's been saved.
             await _cameraCore.getCamera().takePicture(path);
             Logger.debug("file is saved in [$path]");
-//            int id = await _addPhoto(path);
-//            Logger.debug("new photo is added in database. id = $id");
+
+            int id = await _addPhoto(path);
+            Logger.debug("new photo is saved, id = [$id]");
 
             Navigator.push(
               context,
               MaterialPageRoute(
-//                builder: (context) => DisplayPictureScreen(
-//                    imagePath: path,
-//                    direction: _cameraCore.getCameraDirection(),
-//                ),
                 builder: (context) =>
                     ViewPicturePage(
                       filePath: path,
                       direction: _cameraCore.getCameraDirection(),
-//                      newPhoto: true
                     ),
               ),
             );
