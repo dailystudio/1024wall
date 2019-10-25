@@ -4,6 +4,8 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:image/image.dart' as img;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
@@ -91,14 +93,14 @@ class _MyHomePageState extends State<MyHomePage>
   ScrollController _faceScrollController = ScrollController();
   bool _hasNewFaces = false;
 
-  Future<List<Photo>> _fetchPhotos() async {
+  Future<List<Photo>> _fetchPhotos({placeholder = true}) async {
     PhotoDatabase db = new PhotoDatabase();
 
     await db.open();
     final List<Photo> faces = await db.listPhotos();
     db.close();
 
-    if (faces.length % 2 == 0) {
+    if (faces.length % 2 == 0 && placeholder) {
       faces.add(PhotoPlaceHolder());
     }
 
@@ -175,15 +177,15 @@ class _MyHomePageState extends State<MyHomePage>
     photoFrames.clear();
 
     photoFrames.add(Frame('assets/images/photo_frame_red.png',
-      0.415, -10 / 180 * 3.14, Offset(19, 52)));
+      0.83, -10.5 / 180 * 3.14, Offset(34, 102)));
     photoFrames.add(Frame('assets/images/photo_frame_yellow.png',
-      0.415, 6.5 / 180 * 3.14, Offset(24, 67)));
+      0.83, 6.5 / 180 * 3.14, Offset(48, 134)));
     photoFrames.add(Frame('assets/images/photo_frame_orange.png',
-      0.415, 1.6 / 180 * 3.14, Offset(16, 71)));
+      0.83, 1.6 / 180 * 3.14, Offset(32, 142)));
     photoFrames.add(Frame('assets/images/photo_frame_blue.png',
-      0.415, -3 / 180 * 3.14, Offset(16, 69)));
+      0.83, -3 / 180 * 3.14, Offset(31, 138)));
     photoFrames.add(Frame('assets/images/photo_frame_green.png',
-      0.415, 11.5 / 180 * 3.14, Offset(28, 46)));
+      0.83, 11.5 / 180 * 3.14, Offset(60, 90)));
   }
 
   void _initCells() {
@@ -277,6 +279,7 @@ class _MyHomePageState extends State<MyHomePage>
 
     canvas.drawImage(photoWallBackground, Offset(0, 0), drawPaint);
     canvas.drawImage(photoWallContent, bgFrame.offset, drawPaint);
+//    canvas.drawImage(photoWallContent, Offset(0, 0), drawPaint);
 
     var pic = pictureRecorder.endRecording();
 
@@ -299,9 +302,8 @@ class _MyHomePageState extends State<MyHomePage>
     _initPhotoFrames();
     _initCells();
 
-    List<Photo> photos = await _fetchPhotos();
+    List<Photo> photos = await _fetchPhotos(placeholder: false);
     Logger.debug('photoes to use: $photos');
-    var maxSize = photos.length;
 
     var col = 24;
     var row = 11;
@@ -333,7 +335,7 @@ class _MyHomePageState extends State<MyHomePage>
     }
 */
 
-    Paint fillPaint = Paint();
+    Paint fillPaint = Paint()..isAntiAlias = true;
     fillPaint..color = Colors.deepOrange;
     fillPaint..style = PaintingStyle.fill;
 
@@ -348,21 +350,15 @@ class _MyHomePageState extends State<MyHomePage>
     Frame frame;
     var cache = Map<String, ui.Image>();
     double scale;
-    int min, max;
     for (Point p in _occupied) {
       if (p.x < 0 || p.x >= col || p.y < 0 || p.y >= row) {
         continue;
       }
 
-      min = 0;
-      max = photoFrames.length;
-      frameIndex = min + Random().nextInt(max - min);
-
+      frameIndex = Random().nextInt(photoFrames.length);
       frame = photoFrames[frameIndex];
 
-      min = 0;
-      max = photos.length;
-      photoIndex = min + Random().nextInt(max - min);
+      photoIndex = Random().nextInt(photos.length);
       photo = photos[photoIndex];
       key = path.basename(photo.file);
       Logger.debug("pick $photoIndex: $photo to fill, key = $key");
@@ -445,7 +441,9 @@ class _MyHomePageState extends State<MyHomePage>
     var pictureRecorder = ui.PictureRecorder();
     Canvas canvas = Canvas(pictureRecorder);
 
-    Paint imagePaint = Paint()..isAntiAlias = true;
+    Paint imagePaint = Paint()
+      ..isAntiAlias = true
+      ..filterQuality = FilterQuality.high;
 
     Rect srcRect =
         Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
