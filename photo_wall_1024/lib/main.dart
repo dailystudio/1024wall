@@ -27,7 +27,7 @@ final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
 Set<Point<int>> _occupied = Set();
 
 Frame bgFrame = Frame('assets/images/developer_day_2019.png',
-    1.0, 0.0, Offset(928, 254));
+    1.0, 0.0, Offset(960, 220));
 
 List<Frame> photoFrames = List();
 
@@ -380,7 +380,7 @@ class _MyHomePageState extends State<MyHomePage>
 
       scale = _calculateScale(
           Size(image.width.toDouble(), image.height.toDouble()),
-          Size(cellWidth, cellHeight));
+          Size(cellWidth * 1.4, cellHeight * 1.4));
 
       dstRect = Rect.fromLTWH(offsetX + p.x * cellWidth,
           offsetY + p.y * cellHeight, cellWidth, cellHeight);
