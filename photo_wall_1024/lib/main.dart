@@ -26,8 +26,8 @@ Color primaryColor = Colors.deepOrange;
 final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
 Set<Point<int>> _occupied = Set();
 
-Frame bgFrame = Frame('assets/images/developer_day_2019.png',
-    1.0, 0.0, Offset(960, 220));
+Frame bgFrame = Frame('assets/images/chinese_programmer_day_2019.png',
+    1.0, 0.0, Offset(320, 144));
 
 List<Frame> photoFrames = List();
 
