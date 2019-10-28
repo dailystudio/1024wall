@@ -48,7 +48,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Photo Wall for 1024',
+      title: 'Photowall 1024',
       theme: ThemeData(
         // This is the theme of your application.
         //
@@ -63,7 +63,7 @@ class MyApp extends StatelessWidget {
         accentColor: primaryColor,
         primaryTextTheme: TextTheme(title: TextStyle(color: Colors.white)),
       ),
-      home: MyHomePage(title: 'Photo Wall for 1024'),
+      home: MyHomePage(title: 'Photowall 1024'),
     );
   }
 }
@@ -648,6 +648,8 @@ class _MyHomePageState extends State<MyHomePage>
 
   @override
   Widget build(BuildContext context) {
+    AppBar appBar = AppBar();
+    double appBarHeight = appBar.preferredSize.height;
     // This method is rerun every time setState is called, for instance as done
     // by the _incrementCounter method above.
     //
@@ -659,7 +661,51 @@ class _MyHomePageState extends State<MyHomePage>
         // Here we take the value from the MyHomePage object that was created by
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
+        actions: <Widget>[
+          PopupMenuButton<String>(
+            offset: Offset(0, appBarHeight / 3),
+            onSelected: (String itemId) {
+              print('item $itemId is selected');
+              switch (itemId) {
+                case 'about':
+                  print('show about');
+                  showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return AboutDialog(
+                          applicationName: 'Photowall 1024',
+                          applicationVersion: '1.0.0',
+                          applicationIcon: Image.asset(
+                            'assets/images/ic_launcher.png',
+                            width: 48,
+                            height: 48,
+                          ),
+                          children: <Widget>[
+                            Image.asset('assets/images/about_top.jpg'),
+                            Container(
+                                padding: EdgeInsets.only(top: 15),
+                                child: Text(
+                                    'This application is used for collecting interesting photos and build up a photo wall for the celebration of Chinese Programmer\'s Day. \n\nIf you have any problem, please feel free to contact one of these mail address:\n\n\t\t\t\tdailystudio2010@gmail.com\n'
+                                )
+                            ),
+                          ],
+                        );
+                      });
+                  break;
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              return [
+                PopupMenuItem(
+                  value: 'about',
+                  child: Text("About"),
+                )
+              ];
+            },
+          ),
+        ],
       ),
+
       body: new FutureBuilder<List<Photo>>(
         future: _fetchPhotos(),
         builder: (context, snapshot) {
