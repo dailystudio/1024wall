@@ -26,6 +26,14 @@ class TakePicturePageState extends State<TakePicturePage> {
 
   CameraCore _cameraCore = cameraCoreInstance;
 
+
+  @override
+  void initState() {
+    super.initState();
+
+    cameraCoreInstance.initCamera();
+  }
+
   Future<void> _setupCamera() async {
     await _cameraCore.openCamera();
   }

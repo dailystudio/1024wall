@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,7 +18,6 @@ import 'package:photo_wall_1024/events/events.dart';
 import 'package:photo_wall_1024/page/takepicturepage.dart';
 import 'package:photo_wall_1024/ui/photogridview.dart';
 import 'package:photo_wall_1024/ui/photowallgenerator.dart';
-import 'package:photo_wall_1024/utils/camera.dart';
 import 'development/logger.dart';
 
 Color primaryColor = Colors.deepOrange;
@@ -41,8 +39,6 @@ void main() {
   if (!kReleaseMode) {
     Stetho.initialize();
   }
-
-  cameraCoreInstance.initCamera();
 
   runApp(MyApp());
 }
