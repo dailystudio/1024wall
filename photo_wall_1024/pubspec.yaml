@@ -42,8 +42,8 @@ dependencies:
   android_intent: ^0.3.4+3
   flutter_image_compress: ^0.6.3
   open_file: ^2.0.3
-
-
+  progress_dialog: ^1.2.0
+  liquid_progress_indicator: ^0.3.2
 
 dev_dependencies:
   flutter_test:

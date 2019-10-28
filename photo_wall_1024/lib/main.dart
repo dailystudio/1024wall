@@ -3,17 +3,17 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-
-import 'package:image/image.dart' as img;
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:flutter_stetho/flutter_stetho.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:liquid_progress_indicator/liquid_progress_indicator.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:progress_dialog/progress_dialog.dart';
 import 'package:photo_wall_1024/database/database.dart';
 import 'package:photo_wall_1024/events/events.dart';
 import 'package:photo_wall_1024/page/takepicturepage.dart';
@@ -26,8 +26,10 @@ Color primaryColor = Colors.deepOrange;
 final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
 Set<Point<int>> _occupied = Set();
 
-Frame bgFrame = Frame('assets/images/chinese_programmer_day_2019.png',
-    1.0, 0.0, Offset(320, 144));
+Random _random = Random();
+
+Frame bgFrame = Frame('assets/images/chinese_programmer_day_2019.png', 1.0, 0.0,
+    Offset(320, 144));
 
 List<Frame> photoFrames = List();
 
@@ -92,6 +94,7 @@ class _MyHomePageState extends State<MyHomePage>
     with WidgetsBindingObserver, RouteAware {
   ScrollController _faceScrollController = ScrollController();
   bool _hasNewFaces = false;
+  ProgressDialog _progressDialog;
 
   Future<List<Photo>> _fetchPhotos({placeholder = true}) async {
     PhotoDatabase db = new PhotoDatabase();
@@ -176,16 +179,16 @@ class _MyHomePageState extends State<MyHomePage>
   void _initPhotoFrames() {
     photoFrames.clear();
 
-    photoFrames.add(Frame('assets/images/photo_frame_red.png',
-      0.83, -10.5 / 180 * 3.14, Offset(34, 102)));
-    photoFrames.add(Frame('assets/images/photo_frame_yellow.png',
-      0.83, 6.5 / 180 * 3.14, Offset(48, 134)));
-    photoFrames.add(Frame('assets/images/photo_frame_orange.png',
-      0.83, 1.6 / 180 * 3.14, Offset(32, 142)));
-    photoFrames.add(Frame('assets/images/photo_frame_blue.png',
-      0.83, -3 / 180 * 3.14, Offset(31, 138)));
-    photoFrames.add(Frame('assets/images/photo_frame_green.png',
-      0.83, 11.5 / 180 * 3.14, Offset(60, 90)));
+    photoFrames.add(Frame('assets/images/photo_frame_red.png', 0.83,
+        -10.5 / 180 * 3.14, Offset(34, 102)));
+    photoFrames.add(Frame('assets/images/photo_frame_yellow.png', 0.83,
+        6.5 / 180 * 3.14, Offset(48, 134)));
+    photoFrames.add(Frame('assets/images/photo_frame_orange.png', 0.83,
+        1.6 / 180 * 3.14, Offset(32, 142)));
+    photoFrames.add(Frame('assets/images/photo_frame_blue.png', 0.83,
+        -3 / 180 * 3.14, Offset(31, 138)));
+    photoFrames.add(Frame('assets/images/photo_frame_green.png', 0.83,
+        11.5 / 180 * 3.14, Offset(60, 90)));
   }
 
   void _initCells() {
@@ -255,14 +258,41 @@ class _MyHomePageState extends State<MyHomePage>
     PermissionStatus permission = await PermissionHandler()
         .checkPermissionStatus(PermissionGroup.storage);
     if (permission != PermissionStatus.granted) {
-      Logger.debug('permission[${PermissionGroup.storage}] is not granted. request it!');
-      Map<PermissionGroup, PermissionStatus> permissions = await PermissionHandler()
-          .requestPermissions([PermissionGroup.storage]);
+      Logger.debug(
+          'permission[${PermissionGroup.storage}] is not granted. request it!');
+      Map<PermissionGroup, PermissionStatus> permissions =
+          await PermissionHandler()
+              .requestPermissions([PermissionGroup.storage]);
       if (permissions[PermissionGroup.storage] != PermissionStatus.granted) {
-        Logger.debug('permission[${PermissionGroup.storage}] is denied. skip export.');
+        Logger.debug(
+            'permission[${PermissionGroup.storage}] is denied. skip export.');
         return;
       }
     }
+
+    _progressDialog = ProgressDialog(context);
+    _progressDialog.style(
+      progressWidget: LiquidCircularProgressIndicator(
+        value: 0,
+        // Defaults to 0.5.
+        valueColor: AlwaysStoppedAnimation(primaryColor),
+        // Defaults to the current Theme's accentColor.
+        backgroundColor: Colors.deepOrangeAccent[100],
+        // Defaults to the current Theme's backgroundColor.
+        borderColor: primaryColor,
+        borderWidth: 3.0,
+        direction: Axis.vertical,
+        center: Text(
+          '0%',
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
+      message: 'Generating the photo wall ...',
+      messageTextStyle: TextStyle(
+          color: primaryColor, fontSize: 18.0, fontWeight: FontWeight.bold),
+    );
+
+    _progressDialog.show();
 
     var pictureRecorder = ui.PictureRecorder();
     var canvas = Canvas(pictureRecorder);
@@ -273,29 +303,104 @@ class _MyHomePageState extends State<MyHomePage>
 //
 //    canvas.drawImage(bg, Offset((width - bg.width) / 2, (height - bg.height)/ 2), drawPaint);
 
-
     ui.Image photoWallBackground = await bgFrame.getImage();
     ui.Image photoWallContent = await _generate();
 
     canvas.drawImage(photoWallBackground, Offset(0, 0), drawPaint);
     canvas.drawImage(photoWallContent, bgFrame.offset, drawPaint);
-//    canvas.drawImage(photoWallContent, Offset(0, 0), drawPaint);
+    _updateProgress(70);
 
     var pic = pictureRecorder.endRecording();
 
-    ui.Image finalImage = await pic.toImage(photoWallBackground.width.round(),
-        photoWallBackground.height.round());
+    ui.Image finalImage = await pic.toImage(
+        photoWallBackground.width.round(), photoWallBackground.height.round());
 //    ui.Image finalImage = await pic.toImage(photoWallContent.width.round(),
 //        photoWallContent.height.round());
 
     var byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
+    String outputFile = '/sdcard/1.png';
+    _updateProgress(100);
+
+    Map params = {'output': outputFile, 'data': byteData};
+
+    await compute(_savePhotoWallImage, params);
+
+    _progressDialog.hide();
+    OpenFile.open(outputFile);
+  }
+
+  void _updateProgress(int progress) {
+    if (_progressDialog != null && _progressDialog.isShowing()) {
+      _progressDialog.update(
+          progress: progress.toDouble(),
+          progressWidget: LiquidCircularProgressIndicator(
+            value: progress / 100,
+            // Defaults to 0.5.
+            valueColor: AlwaysStoppedAnimation(primaryColor),
+            // Defaults to the current Theme's accentColor.
+            backgroundColor: Colors.deepOrangeAccent[100],
+            // Defaults to the current Theme's backgroundColor.
+            borderColor: primaryColor,
+            borderWidth: 3.0,
+            direction: Axis.vertical,
+            center: Text(
+              '$progress%',
+              style: TextStyle(color: Colors.white),
+            ),
+            // The direction the liquid moves (Axis.vertical = bottom to top, Axis.horizontal = left to right). Defaults to Axis.vertical.
+          ));
+    }
+  }
+
+  static _savePhotoWallImage(Map params) {
+    String outputFile = params['output'];
+    ByteData byteData = params['data'];
+
     var buffer = byteData.buffer.asUint8List();
 
-    String outputFile = '/sdcard/1.png';
-    await new File(outputFile).writeAsBytes(buffer);
+    new File(outputFile).writeAsBytes(buffer);
     Logger.debug('generated photo wall is saved in [$outputFile]');
+  }
 
-    OpenFile.open(outputFile);
+  Map<Point<int>, int> randomIndexes(List<Photo> photos, Set<Point<int>> occupied) {
+    if (photos.length <= 0 || occupied.length <= 0) {
+      return null;
+    }
+
+    int maxLen = max(photos.length, occupied.length);
+    int fillLen = (occupied.length - photos.length);
+
+    var indexes = [];
+    for (int i = 0; i < maxLen; i++) {
+      if (fillLen <= 0) {
+        indexes.add(_random.nextInt(photos.length));
+      } else {
+        if (i < photos.length) {
+          indexes.add(i);
+        } else {
+          indexes.add(_random.nextInt(photos.length));
+        }
+      }
+    }
+    
+    Logger.debug('indexes [photo:${photos.length}, occupied: ${_occupied.length}, fillLen: $fillLen): $indexes, ${indexes.length}');
+
+    Map<Point<int>, int> map = Map();
+    int selectedIndex;
+    int photoIndex;
+    for (Point p in occupied) {
+      selectedIndex = _random.nextInt(indexes.length);
+
+      photoIndex = indexes[selectedIndex];
+
+      map[p] = photoIndex;
+
+      indexes.removeAt(selectedIndex);
+    }
+
+    Logger.debug('map: $map');
+
+    return map;
   }
 
   Future<ui.Image> _generate() async {
@@ -304,6 +409,11 @@ class _MyHomePageState extends State<MyHomePage>
 
     List<Photo> photos = await _fetchPhotos(placeholder: false);
     Logger.debug('photoes to use: $photos');
+
+    Map<Point<int>, int> indexes = randomIndexes(photos, _occupied);
+    if (indexes == null) {
+      return null;
+    }
 
     var col = 24;
     var row = 11;
@@ -334,7 +444,6 @@ class _MyHomePageState extends State<MyHomePage>
       canvas.drawLine(Offset(offsetX, y), Offset(offsetX + width, y), linePaint);
     }
 */
-
     Paint fillPaint = Paint()..isAntiAlias = true;
     fillPaint..color = Colors.deepOrange;
     fillPaint..style = PaintingStyle.fill;
@@ -350,15 +459,16 @@ class _MyHomePageState extends State<MyHomePage>
     Frame frame;
     var cache = Map<String, ui.Image>();
     double scale;
+    int count = 0;
     for (Point p in _occupied) {
       if (p.x < 0 || p.x >= col || p.y < 0 || p.y >= row) {
         continue;
       }
 
-      frameIndex = Random().nextInt(photoFrames.length);
+      frameIndex = _random.nextInt(photoFrames.length);
       frame = photoFrames[frameIndex];
 
-      photoIndex = Random().nextInt(photos.length);
+      photoIndex = indexes[p];
       photo = photos[photoIndex];
       key = path.basename(photo.file);
       Logger.debug("pick $photoIndex: $photo to fill, key = $key");
@@ -370,9 +480,8 @@ class _MyHomePageState extends State<MyHomePage>
         cache[key] = image;
       }
 
-      image = await decorateImage(image, await frame.getImage(),
-          frame.scale, frame.angle, frame.offset);
-
+      image = await decorateImage(image, await frame.getImage(), frame.scale,
+          frame.angle, frame.offset);
 
 //      r = Rect.fromLTWH(offsetX + p.x * cellWidth, offsetY + p.y * cellHeight,
 //          cellWidth, cellHeight);
@@ -387,9 +496,15 @@ class _MyHomePageState extends State<MyHomePage>
 
       srcRect =
           Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
-      dstRect = Rect.fromLTWH(offsetX + p.x * cellWidth,
-          offsetY + p.y * cellHeight, image.width * scale, image.height * scale);
+      dstRect = Rect.fromLTWH(
+          offsetX + p.x * cellWidth,
+          offsetY + p.y * cellHeight,
+          image.width * scale,
+          image.height * scale);
       canvas.drawImageRect(image, srcRect, dstRect, fillPaint);
+
+      _updateProgress((60 * (count / _occupied.length)).round());
+      count++;
     }
 
     var pic = pictureRecorder.endRecording();
@@ -398,18 +513,16 @@ class _MyHomePageState extends State<MyHomePage>
     return img;
   }
 
-  Future<ui.Image> decorateImage(
-      ui.Image image, ui.Image frame,
-      double scale,
-      double angle,
-      Offset offset) async {
+  Future<ui.Image> decorateImage(ui.Image image, ui.Image frame, double scale,
+      double angle, Offset offset) async {
     var pictureRecorder = ui.PictureRecorder();
     Canvas canvas = Canvas(pictureRecorder);
 
     Paint imagePaint = Paint()..isAntiAlias = true;
 
     ui.Image scaled = await scaleImage(image, scale);
-    ui.Image cropped = await cropImage(scaled, scaled.width, (scaled.width * 1.1).round());
+    ui.Image cropped =
+        await cropImage(scaled, scaled.width, (scaled.width * 1.1).round());
     ui.Image rotated = await rotatedImage(cropped, angle);
     canvas.drawImage(frame, Offset(0, 0), imagePaint);
 //    canvas.drawRect(
@@ -590,4 +703,5 @@ class _MyHomePageState extends State<MyHomePage>
           ]), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
+
 }
